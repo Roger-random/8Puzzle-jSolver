@@ -43,7 +43,7 @@ var getTileDim = function() {
 
   var minDim = Math.min(
     window.innerWidth, 
-    window.innerHeight-$("#otherUI").innerHeight(), 
+    window.innerHeight-$("#otherUI").outerHeight(), 
     tileBoard.innerWidth() );
 
   return (minDim / Math.max(boardRows, boardColumns)) * (1-tileSpace);
