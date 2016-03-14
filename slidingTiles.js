@@ -4,7 +4,6 @@ var tileBlank = 0;
 // Array tracks the position of tiles.
 // Index in array = position on the board.
 // Value in the array = number on the tile.
-// 0 represents blank.
 var tilePosition = [1, 2, 3,
                     4, 5, 6, 
                     7, 8, tileBlank];
@@ -108,7 +107,7 @@ var setupTiles = function() {
   var tileBoard = $("#tileBoard");
   var tileTemplate = $("#tileTemplateHost .box");
 
-  for (var i = 1; i < 9; i++) {
+  for (var i = 1; i < (boardRows * boardColumns); i++) {
     var newTile = tileTemplate.clone(false, false);
     newTile.attr("id", i);
     newTile.children(".boxLabel").text(i);
@@ -137,6 +136,55 @@ var isValidSwap = function(indexClick, indexBlank) {
   return false;
 };
 
+// Lookup table of factorial values
+var F = [1];
+
+// Ensure the factorial values lookup table is ready
+var ensureFactorialTable = function() {
+  var tableSize = boardColumns * boardRows;
+  
+  if (F.length == tableSize) {
+    return;
+  } else {
+    for (var i = 1; i < tableSize; i++) {
+      F[i] = F[i-1]*i;
+    }
+  }
+}
+
+// Encode the board position into a single number
+var encodeBoard = function() {
+  var tableSize = boardColumns * boardRows;
+  var tileEncoded = new Array(tableSize);
+  var digitBase = tableSize-1;
+  var encodeValue = 0;
+  
+  ensureFactorialTable();
+  
+  for (var i = 0; i < tableSize; i++) {
+    tileEncoded[i] = false;
+  }
+  
+  for (var i = 0; i < tableSize; i++) {
+    var tileNum = tilePosition[i];
+    var encodeNum = tileNum;
+    
+    for (var j = 0; j < tileNum; j++) {
+      if (tileEncoded[j]) {
+        encodeNum--;
+      }
+    }
+    
+    encodeValue += encodeNum * F[digitBase--];
+    
+    tileEncoded[tileNum] = true;
+  }
+  
+  return encodeValue;
+}
+
+
+// Calculate the Manhattan Distance of the tile at the specified index.
 var calculateManhattanDistance = function(index) {
   var tileAtIndex = tilePosition[index];
   var desiredIndex = 0;
@@ -182,7 +230,7 @@ var updateStatusBar = function() {
     $("#scrambleText").text("SCRAMBLE PUZZLE")
     $("#scrambleButton").on("click", scramblePuzzle);
   } else {
-    $("#boardState").text(displacedTiles + " tiles displaced by total of " + manhattanDistance + " spaces");
+    $("#boardState").text("Displaced=" + displacedTiles + " Distance=" + manhattanDistance + " Encode=" + encodeBoard());
     $("#progress").text(playerMoves + " moves so far.");
   }
 };
@@ -283,5 +331,4 @@ $(document).ready(function() {
   $(window).resize(resizeTiles);
   $("#tileBoard").on("click", ".box", tileClicked);
   $("#scrambleButton").on("click", scramblePuzzle);
-  
 });
