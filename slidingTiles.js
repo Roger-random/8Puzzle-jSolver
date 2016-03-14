@@ -21,9 +21,6 @@ var tileSpace = 0.05;
 // Track the number of times the player moved a tile
 var playerMoves = 0;
 
-// Minimum number of steps taken in the scrambling procedure
-var scrambleMin = 50;
-
 // Number of tiles out of place
 var displacedTiles = 0;
 
@@ -146,6 +143,7 @@ var ensureFactorialTable = function() {
   if (F.length == tableSize) {
     return;
   } else {
+    F[0] = 1;
     for (var i = 1; i < tableSize; i++) {
       F[i] = F[i-1]*i;
     }
@@ -153,7 +151,7 @@ var ensureFactorialTable = function() {
 }
 
 // Encode the board position into a single number
-var encodeBoard = function() {
+var encodeBoard = function(boardPositions) {
   var tableSize = boardColumns * boardRows;
   var tileEncoded = new Array(tableSize);
   var digitBase = tableSize-1;
@@ -166,7 +164,7 @@ var encodeBoard = function() {
   }
   
   for (var i = 0; i < tableSize; i++) {
-    var tileNum = tilePosition[i];
+    var tileNum = boardPositions[i];
     var encodeNum = tileNum;
     
     for (var j = 0; j < tileNum; j++) {
@@ -180,7 +178,56 @@ var encodeBoard = function() {
     tileEncoded[tileNum] = true;
   }
   
+  /*
+  var decodeVerify = decodeBoard(encodeValue);
+  for (var i = 0; i < boardPositions.length; i++) {
+    if (decodeVerify[i] != boardPositions[i]) {
+      console.log("Expected: " + boardPositions + " but got:" + decodeVerify);
+    }
+  }
+  */
+  
   return encodeValue;
+}
+
+// Decode the board number into a board layout
+var decodeBoard = function(encodedValue) {
+  var tableSize = boardColumns * boardRows;
+  var tileDecoded = new Array(tableSize);
+  var digitBase = tableSize-1;
+  var posDecoded = new Array(tableSize);
+  var decodeCurrent = 0;
+  var decodeRemainder = encodedValue;
+
+  ensureFactorialTable();
+  
+  for (var i = 0; i < tableSize; i++) {
+    tileDecoded[i] = false;
+  }
+  
+  for (var i = 0; i < tableSize; i++) {
+    var tileNum = 0;
+    decodeCurrent = Math.floor(decodeRemainder/F[digitBase]);
+    decodeRemainder = decodeRemainder % F[digitBase];
+    digitBase--;
+    
+    while (decodeCurrent > 0 || tileDecoded[tileNum]) {
+      if (!tileDecoded[tileNum]) {
+        decodeCurrent--;
+      }
+      tileNum++;
+    }
+    
+    posDecoded[i] = tileNum;
+    tileDecoded[tileNum] = true;
+  }
+  /*
+  if (encodedValue != encodeBoard(tileDecoded)) {
+    console.log("Inconsistency between encode and decode.");
+  }
+  */
+  
+  return posDecoded;
 }
 
 
@@ -230,7 +277,7 @@ var updateStatusBar = function() {
     $("#scrambleText").text("SCRAMBLE PUZZLE")
     $("#scrambleButton").on("click", scramblePuzzle);
   } else {
-    $("#boardState").text("Displaced=" + displacedTiles + " Distance=" + manhattanDistance + " Encode=" + encodeBoard());
+    $("#boardState").text("Displaced=" + displacedTiles + " Distance=" + manhattanDistance + " Encode=" + encodeBoard(tilePosition));
     $("#progress").text(playerMoves + " moves so far.");
   }
 };
@@ -265,7 +312,7 @@ var scramblePuzzle = function() {
   calculateHeuristics();
   
   while(displacedTiles < tilePosition.length-1 ||
-        scrambleSteps  < scrambleMin) {
+        manhattanDistance < tilePosition.length * 2) {
     indexCandidate = tilePosition.length;
     indexBlank = indexOfTile(tileBlank);
     
@@ -304,8 +351,7 @@ var scramblePuzzle = function() {
     }
     
     var tileCandidate = tilePosition[indexCandidate];
-    console.log(tileCandidate);
-    
+
     scramblePrevIndex = indexBlank;
     
     tilePosition[indexBlank] = tileCandidate;  
@@ -316,6 +362,8 @@ var scramblePuzzle = function() {
     calculateHeuristics();
     scrambleSteps++;
   }
+  
+  console.log("Scramble took " + scrambleSteps + " steps to meet criteria.");
 
   playerMoves = 0;
   updateStatusBar();
