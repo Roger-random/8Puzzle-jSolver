@@ -21,14 +21,6 @@ var tileSpace = 0.05;
 // Track the number of times the player moved a tile
 var playerMoves = 0;
 
-// Number of tiles out of place
-var displacedTiles = 0;
-
-// Every out-of-place tile is some number of spaces away from their desired
-// position. This is the sum of all the number of spaces.
-var manhattanDistance = 0;
-
-
 // The M of MVC: Model
 
 // SlidingTilePuzzle represents the puzzle's state and some basic methods
@@ -47,7 +39,8 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
   var displacedTiles = 0;
   var manhattanDistance = 0;
   
-  // Utility lookup table
+  /////////////////////////////////////////////////////////////////////////////
+  // Factorial lookup table
   var F = [1];
   
   // Ensure the factorial values lookup table is ready
@@ -62,7 +55,10 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
     }
   };
   
-  // Private methods
+  /////////////////////////////////////////////////////////////////////////////
+  // We will either have defaultState or decodeBoard set up our puzzle state
+  // array. Which one depends on the encodedPuzzleState parameter passed into
+  // the constructor.
 
   // Generate an array representing this puzzle in the default solved state.
   var defaultState = function() {
@@ -106,61 +102,13 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
       posDecoded[i] = tileNum;
       tileDecoded[tileNum] = true;
     }
-    /*
-    if (encodedValue != encodeBoard(tileDecoded)) {
-      console.log("Inconsistency between encode and decode.");
-    }
-    */
-    
+
     return posDecoded;
   };
   
-/*  
-  // Deprecated - we're no longer passing arrays around representing board.
-  
-  var copyIfValid = function(inputPuzzle) {
-    if (inputPuzzle === undefined) {
-      // No given puzzle - go to default.
-      return defaultState();
-    } else if (givenPuzzle.length !== puzzleLength) {
-      // Given array is the wrong size. Log it, then go to default (ignore given)
-      console.log("Initialization array size is " + inputPuzzle.length + 
-            " when " + puzzleLength + " was expected. Using default array instead.");
-      return defaultState();
-    } else {
-      // Size is correct, make sure the tiles make sense.
-      
-      // Array to track the tiles we've seen.
-      var seenArray = new Array(puzzleLength);
-      for (var i = 0; i < puzzleLength; i++) {
-        seenArray[i] = false;
-      }
-    
-      // Examine the puzzle array
-      for (var i = 0; i < puzzleLength; i++) {
-        var givenTile = inputPuzzle[i];
-        
-        if (givenTile < 0 || givenTile >= puzzleLength) {
-          console.log("Initialization array has invalid tile " + givenTile + 
-            " at index " + i + ". Using default array instead.");
-          return defaultState();
-        } else if (seenArray[givenTile]) {
-          console.log("Initialization givenPuzzle has duplicate tile " + 
-            givenTile + ". Using default array instead.");
-          return defaultState();
-        } else {
-          seenArray[givenTile] = true;
-        }
-      }
-     
-      // Everything looks good - make a copy of the input and return that. 
-      return inputPuzzle.slice(0);
-    }
-  };
-*/  
-
   var puzzleState = (encodedPuzzleState===undefined) ? defaultState() : decodeBoard(encodedPuzzleState);
 
+  /////////////////////////////////////////////////////////////////////////////
   // Generate the auxiliary statistics
   var ensureAuxStats = function() {
     if (validAux) {
@@ -202,15 +150,24 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
     validAux = true;
   };
   
+  var invalidateAuxStats = function() {
+    validAux = false;
+  }
+  
   ensureAuxStats();
   
+  /////////////////////////////////////////////////////////////////////////////
+  // Tile movment methods
+  
   // This private function does not perform any validation of the two tile
-  // indices, so it can perform swaps that are not valid sliding tile puzzle
-  // moves.
+  // indices, the caller is responsible for checking validity OR deliberately
+  // making an illegal move.
   var swapTileNoValidation = function(tile1, tile2) {
     var tileTemp = puzzleState[tile1];
     puzzleState[tile1] = puzzleState[tile2];
     puzzleState[tile2] = tileTemp;
+
+    invalidateAuxStats();
   };
   
   // This function takes an index of a tile to swap with the blank tile.
@@ -242,7 +199,6 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
     if (validSwap) {
       // Make the swap and update stats
       swapTileNoValidation(indexBlank, indexSwap);
-      validAux = false;
       ensureAuxStats();
     }
     
@@ -295,6 +251,7 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
   }
 
   /////////////////////////////////////////////////////////////////////////////
+  // Puzzle state representation methods
 
   // Encode the puzzle state into a single number
   this.encode = function() {
@@ -355,10 +312,14 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
   // Public property getters
   /////////////////////////////////////////////////////////////////////////////
   
+  // Returns the number of columns on the game board
+  this.getColumns = function() { return puzzleColumns; };
+  
+  // Returns the number of rows on the game board
+  this.getRows = function() { return puzzleRows; };
+  
   // Returns the number of spaces on the game board
-  this.getSize = function() {
-    return puzzleLength;
-  };
+  this.getSize = function() { return puzzleLength; };
   
   // Returns the number of tiles displaced from their goal position
   this.getDisplacedTiles = function() {
@@ -459,25 +420,6 @@ var setupTiles = function() {
   }
 
   resizeTiles();
-};
-
-// Checks to see if the two given tile indices can be legally swapped.
-// If so, return true.
-var isValidSwap = function(indexClick, indexBlank) {
-  if (indexClick + 1 == indexBlank &&
-    (indexClick % boardColumns)+1 < boardColumns) {
-    return true; // Move right
-  } else if (indexClick - 1 == indexBlank &&
-    indexClick % boardColumns > 0) {
-    return true; // Move left
-  } else if (indexBlank < tilePosition.length &&
-    indexClick + boardColumns == indexBlank) {
-    return true; // Move down
-  } else if (indexBlank >= 0 &&
-    indexClick - boardColumns == indexBlank) {
-    return true; // Move up
-  }
-  return false;
 };
 
 // Lookup table of factorial values
