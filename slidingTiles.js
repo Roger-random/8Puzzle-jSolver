@@ -28,6 +28,316 @@ var displacedTiles = 0;
 // position. This is the sum of all the number of spaces.
 var manhattanDistance = 0;
 
+
+// The M of MVC: Model
+
+// SlidingTilePuzzle represents the puzzle's state and some basic methods
+// relating to the position of the tiles.
+
+function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
+  // Raw puzzle state
+  var puzzleColumns = (columns===undefined) ? 4 : columns;
+  var puzzleRows = (rows===undefined) ? 4 : rows;
+  var puzzleLength = puzzleColumns * puzzleRows;
+  // "var puzzleState" comes later since it calls copyIfValid
+  
+  // Auxiliary statistics
+  var validAux = false;
+  var indexBlank = -1;
+  var displacedTiles = 0;
+  var manhattanDistance = 0;
+  
+  // Utility lookup table
+  var F = [1];
+  
+  // Ensure the factorial values lookup table is ready
+  var ensureFactorialTable = function() {
+    if (F.length == puzzleLength) {
+      return;
+    } else {
+      F[0] = 1;
+      for (var i = 1; i < puzzleLength; i++) {
+        F[i] = F[i-1]*i;
+      }
+    }
+  };
+  
+  // Private methods
+
+  // Generate an array representing this puzzle in the default solved state.
+  var defaultState = function() {
+    var newState = new Array(puzzleLength);
+    
+    for (var i = 1; i < puzzleLength; i++) {
+      newState[i-1] = i;
+    }
+    newState[puzzleLength-1] = 0;
+    
+    return newState;
+  };
+  
+  // Decode the board number into a board layout
+  var decodeBoard = function(encodedValue) {
+    var tileDecoded = new Array(puzzleLength);
+    var digitBase = puzzleLength-1;
+    var posDecoded = new Array(puzzleLength);
+    var decodeCurrent = 0;
+    var decodeRemainder = encodedValue;
+  
+    ensureFactorialTable();
+    
+    for (var i = 0; i < puzzleLength; i++) {
+      tileDecoded[i] = false;
+    }
+    
+    for (var i = 0; i < puzzleLength; i++) {
+      var tileNum = 0;
+      decodeCurrent = Math.floor(decodeRemainder/F[digitBase]);
+      decodeRemainder = decodeRemainder % F[digitBase];
+      digitBase--;
+      
+      while (decodeCurrent > 0 || tileDecoded[tileNum]) {
+        if (!tileDecoded[tileNum]) {
+          decodeCurrent--;
+        }
+        tileNum++;
+      }
+      
+      posDecoded[i] = tileNum;
+      tileDecoded[tileNum] = true;
+    }
+    /*
+    if (encodedValue != encodeBoard(tileDecoded)) {
+      console.log("Inconsistency between encode and decode.");
+    }
+    */
+    
+    return posDecoded;
+  };
+  
+/*  
+  // Deprecated - we're no longer passing arrays around representing board.
+  
+  var copyIfValid = function(inputPuzzle) {
+    if (inputPuzzle === undefined) {
+      // No given puzzle - go to default.
+      return defaultState();
+    } else if (givenPuzzle.length !== puzzleLength) {
+      // Given array is the wrong size. Log it, then go to default (ignore given)
+      console.log("Initialization array size is " + inputPuzzle.length + 
+            " when " + puzzleLength + " was expected. Using default array instead.");
+      return defaultState();
+    } else {
+      // Size is correct, make sure the tiles make sense.
+      
+      // Array to track the tiles we've seen.
+      var seenArray = new Array(puzzleLength);
+      for (var i = 0; i < puzzleLength; i++) {
+        seenArray[i] = false;
+      }
+    
+      // Examine the puzzle array
+      for (var i = 0; i < puzzleLength; i++) {
+        var givenTile = inputPuzzle[i];
+        
+        if (givenTile < 0 || givenTile >= puzzleLength) {
+          console.log("Initialization array has invalid tile " + givenTile + 
+            " at index " + i + ". Using default array instead.");
+          return defaultState();
+        } else if (seenArray[givenTile]) {
+          console.log("Initialization givenPuzzle has duplicate tile " + 
+            givenTile + ". Using default array instead.");
+          return defaultState();
+        } else {
+          seenArray[givenTile] = true;
+        }
+      }
+     
+      // Everything looks good - make a copy of the input and return that. 
+      return inputPuzzle.slice(0);
+    }
+  };
+*/  
+
+  var puzzleState = (encodedPuzzleState===undefined) ? defaultState() : decodeBoard(encodedPuzzleState);
+
+  // Encode the puzzle state into a single number
+  var encode = function() {
+    var tileEncoded = new Array(puzzleLength);
+    var digitBase = puzzleLength-1;
+    var encodeValue = 0;
+    
+    ensureFactorialTable();
+    
+    for (var i = 0; i < puzzleLength; i++) {
+      tileEncoded[i] = false;
+    }
+    
+    for (var i = 0; i < puzzleLength; i++) {
+      var tileNum = puzzleState[i];
+      var encodeNum = tileNum;
+      
+      for (var j = 0; j < tileNum; j++) {
+        if (tileEncoded[j]) {
+          encodeNum--;
+        }
+      }
+      
+      encodeValue += encodeNum * F[digitBase--];
+      
+      tileEncoded[tileNum] = true;
+    }
+    
+    /*
+    var decodeVerify = decodeBoard(encodeValue);
+    for (var i = 0; i < boardPositions.length; i++) {
+      if (decodeVerify[i] != boardPositions[i]) {
+        console.log("Expected: " + boardPositions + " but got:" + decodeVerify);
+      }
+    }
+    */
+    
+    return encodeValue;
+  };
+
+
+  // Generate the auxiliary statistics
+  var ensureAuxStats = function() {
+    if (validAux) {
+      return;
+    }
+
+    // Calculate the Manhattan Distance of the tile at the specified index.
+    var calculateManhattanDistance = function(index) {
+      var tileAtIndex = puzzleState[index];
+      var desiredIndex = 0;
+      
+      if (tileAtIndex == 0 ) {
+        desiredIndex = puzzleLength-1;
+      } else {
+        desiredIndex = puzzleState[index]- 1;
+      }
+    
+      var actualRow = Math.floor(index/puzzleColumns);
+      var desiredRow= Math.floor(desiredIndex/puzzleColumns);
+      
+      var actualColumn = Math.abs(index%puzzleColumns);
+      var desiredColumn = Math.abs(desiredIndex%puzzleColumns);
+      
+      return  Math.abs(actualRow-desiredRow) + 
+              Math.abs(actualColumn-desiredColumn);
+    };
+
+    displacedTiles = 0;
+    manhattanDistance = 0;
+  
+    for( var i = 0; i < puzzleLength; i++) {
+      if (puzzleState[i] == 0) {
+        indexBlank = i;
+      } else if (puzzleState[i] != i+1) {
+        displacedTiles++;
+        manhattanDistance += calculateManhattanDistance(i);
+      }
+    }
+    validAux = true;
+  };
+  
+  ensureAuxStats();
+  
+  // This private function does not perform any validation of the two tile
+  // indices, so it can perform swaps that are not valid sliding tile puzzle
+  // moves.
+  var swapTileNoValidation = function(tile1, tile2) {
+    var tileTemp = puzzleState[tile1];
+    puzzleState[tile1] = puzzleState[tile2];
+    puzzleState[tile2] = tileTemp;
+  };
+  
+  // This function takes an index of a tile to swap with the blank tile.
+  // It will check to make sure it is a valid move. If valid, makes the move and
+  // returns true. If invalid, nothing is moved and it returns false.
+  
+  // PUBLIC for the duration of the transition period. make PRIVATE after 
+  // transition is complete.
+  this.trySwapTile = function(indexSwap) {
+    var validSwap = false;
+    
+    ensureAuxStats();
+    
+    if (indexSwap == indexBlank + 1 &&
+        indexSwap%puzzleColumns > 0) {
+      // Valid move with indexSwap on the right, indexBlank on the left.
+      validSwap = true;
+    } else if (indexSwap == indexBlank - 1 &&
+        indexBlank%puzzleColumns > 0) {
+      // Valid move with indexSwap on the left, indexBlank on the right.
+      validSwap = true;
+    } else if (indexSwap == indexBlank + puzzleColumns &&
+        indexSwap < puzzleLength) {
+      // Valid move with indexSwap below indexBlank
+      validSwap = true;
+    } else if (indexSwap == indexBlank - puzzleColumns &&
+        indexSwap >= 0) {
+      // Valid move with indexSwap above indexBlank
+      validSwap = true;
+    }
+    
+    if (validSwap) {
+      // Make the swap and update stats
+      swapTileNoValidation(indexBlank, indexSwap);
+      validAux = false;
+      ensureAuxStats();
+    }
+    
+    return validSwap;
+  };
+  
+  // Public methods
+  this.blankUp = function() {
+    return this.trySwapTile(indexBlank-puzzleColumns);
+  };
+  
+  this.blankDown = function() {
+    return this.trySwapTile(indexBlank+puzzleColumns);
+  };
+  
+  this.blankLeft = function() {
+    return this.trySwapTile(indexBlank-1);
+  };
+  
+  this.blankRight = function() {
+    return this.trySwapTile(indexBlank+1);
+  };
+
+  this.printState = function() {
+    var stringBuilder = "DT="+displacedTiles+" MD="+manhattanDistance+" B@"+indexBlank;
+    
+    for (var row = 0; row < puzzleRows; row++) {
+      stringBuilder += "\n";
+      for (var col = 0; col < puzzleColumns; col++) {
+        stringBuilder += puzzleState[row*puzzleColumns + col];
+        stringBuilder += " ";
+      }
+    }
+    stringBuilder += "\n";
+    
+    return stringBuilder;
+  };
+
+  // Public property getters
+  this.getDisplacedTiles = function() {
+    ensureAuxStats();
+    
+    return displacedTiles;
+  };
+  
+  this.getManhattanDistance = function() {
+    ensureAuxStats();
+    
+    return manhattanDistance;
+  };
+}
+
 // Gets the length of a tile's side.
 // The item #tileBoard is told to lay itself out at 100% of available width.
 // We also query for the visible window's inner width and height.
@@ -341,7 +651,7 @@ var optimalMovesTableWorker = function() {
       addToOpenList(workerState+1, nowBoard, openList);  
     }
     
-    //console.log("Processed " + workerList.length + " positions of length " + workerState);
+    // console.log("Processed " + workerList.length + " positions of length " + workerState);
     
     workerList = openList;
     workerState++;
@@ -398,12 +708,22 @@ var tileClicked = function(event) {
 
   var indexClick = indexOfTile(tileClick, tilePosition);
   var indexBlank = indexOfTile(tileBlank, tilePosition);
+  
+  var tryResult = event.data.trySwapTile(indexClick);
 
   if (isValidSwap(indexClick, indexBlank)) {
     tilePosition[indexBlank] = tileClick;
     tilePosition[indexClick] = tileBlank;
     updatePositionOfTile(tileClick);
+    
+    if(!tryResult) {
+      console.log("Mismatch - old code says valid but new code says not.");
+    }
+  } else if (tryResult) {
+    console.log("Mismatch - old code says invalid but new code says OK.");
   }
+  
+  console.log(event.data.printState());
   
   playerMoves++;
   updateStatusBar();
@@ -482,9 +802,13 @@ var scramblePuzzle = function() {
 // Game board setup: generate tiles, size them correctly, and wait for the
 // user to click.
 $(document).ready(function() {
+  var newPuzzle = new SlidingTilePuzzle(3, 3);
+
   setupTiles();
   $(window).resize(resizeTiles);
-  $("#tileBoard").on("click", ".box", tileClicked);
+  $("#tileBoard").on("click", ".box", newPuzzle, tileClicked);
   $("#scrambleButton").on("click", scramblePuzzle);
   getOptimalMoves(tilePosition);
+  
+  console.log(newPuzzle.printState());
 });
