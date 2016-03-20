@@ -21,95 +21,53 @@ var tileSpace = 0.05;
 // Track the number of times the player moved a tile
 var playerMoves = 0;
 
+// One of two controllers utilizing the puzzle model.
+var solution8puzzle;
+
+/////////////////////////////////////////////////////////////////////////////
 // The M of MVC: Model
 
 // SlidingTilePuzzle represents the puzzle's state and some basic methods
 // relating to the position of the tiles.
 
-function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
+function SlidingTilePuzzle(columns, rows) {
+  // Local iterator
+  var i;
+  
   // Raw puzzle state
   var puzzleColumns = (columns===undefined) ? 4 : columns;
   var puzzleRows = (rows===undefined) ? 4 : rows;
   var puzzleLength = puzzleColumns * puzzleRows;
-  // "var puzzleState" comes later since it calls copyIfValid
+  var puzzleState = new Array(puzzleLength);
   
+  for (i = 1; i < puzzleLength; i++) {
+    puzzleState[i-1] = i;
+  }
+  var indexBlank = puzzleLength-1;
+  puzzleState[indexBlank] = 0;
+
   // Auxiliary statistics
   var validAux = false;
-  var indexBlank = -1;
   var displacedTiles = 0;
   var manhattanDistance = 0;
+  
+  // Scratchpad to avoid frequent allocation/deallocation
+  var scratchpad = new Array(puzzleLength);
   
   /////////////////////////////////////////////////////////////////////////////
   // Factorial lookup table
   var F = [1];
   
-  // Ensure the factorial values lookup table is ready
-  var ensureFactorialTable = function() {
-    if (F.length == puzzleLength) {
-      return;
-    } else {
-      F[0] = 1;
-      for (var i = 1; i < puzzleLength; i++) {
-        F[i] = F[i-1]*i;
-      }
-    }
-  };
-  
-  /////////////////////////////////////////////////////////////////////////////
-  // We will either have defaultState or decodeBoard set up our puzzle state
-  // array. Which one depends on the encodedPuzzleState parameter passed into
-  // the constructor.
-
-  // Generate an array representing this puzzle in the default solved state.
-  var defaultState = function() {
-    var newState = new Array(puzzleLength);
-    
-    for (var i = 1; i < puzzleLength; i++) {
-      newState[i-1] = i;
-    }
-    newState[puzzleLength-1] = 0;
-    
-    return newState;
-  };
-  
-  // Decode the board number into a board layout
-  var decodeBoard = function(encodedValue) {
-    var tileDecoded = new Array(puzzleLength);
-    var digitBase = puzzleLength-1;
-    var posDecoded = new Array(puzzleLength);
-    var decodeCurrent = 0;
-    var decodeRemainder = encodedValue;
-  
-    ensureFactorialTable();
-    
-    for (var i = 0; i < puzzleLength; i++) {
-      tileDecoded[i] = false;
-    }
-    
-    for (var i = 0; i < puzzleLength; i++) {
-      var tileNum = 0;
-      decodeCurrent = Math.floor(decodeRemainder/F[digitBase]);
-      decodeRemainder = decodeRemainder % F[digitBase];
-      digitBase--;
-      
-      while (decodeCurrent > 0 || tileDecoded[tileNum]) {
-        if (!tileDecoded[tileNum]) {
-          decodeCurrent--;
-        }
-        tileNum++;
-      }
-      
-      posDecoded[i] = tileNum;
-      tileDecoded[tileNum] = true;
-    }
-
-    return posDecoded;
-  };
-  
-  var puzzleState = (encodedPuzzleState===undefined) ? defaultState() : decodeBoard(encodedPuzzleState);
+  for (i = 1; i < puzzleLength; i++) {
+    F[i] = F[i-1]*i;
+  }
 
   /////////////////////////////////////////////////////////////////////////////
   // Generate the auxiliary statistics
+  // * Displaced Tiles
+  // * Manhattan Distance
+  // Calculation only occurs on-demand, so we don't waste time computing them
+  // when they are irrelevant.
   var ensureAuxStats = function() {
     if (validAux) {
       return;
@@ -152,9 +110,7 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
   
   var invalidateAuxStats = function() {
     validAux = false;
-  }
-  
-  ensureAuxStats();
+  };
   
   /////////////////////////////////////////////////////////////////////////////
   // Tile movment methods
@@ -166,7 +122,12 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
     var tileTemp = puzzleState[tile1];
     puzzleState[tile1] = puzzleState[tile2];
     puzzleState[tile2] = tileTemp;
-
+    
+    if (indexBlank==tile1) {
+      indexBlank = tile2;
+    } else if (indexBlank==tile2) {
+      indexBlank = tile1;
+    }
     invalidateAuxStats();
   };
   
@@ -175,8 +136,6 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
   // returns true. If invalid, nothing is moved and it returns false.
   var trySwapTile = function(indexSwap) {
     var validSwap = false;
-    
-    ensureAuxStats();
     
     if (indexSwap == indexBlank + 1 &&
         indexSwap%puzzleColumns > 0) {
@@ -199,7 +158,6 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
     if (validSwap) {
       // Make the swap and update stats
       swapTileNoValidation(indexBlank, indexSwap);
-      ensureAuxStats();
     }
     
     return validSwap;
@@ -248,21 +206,53 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
     }
     
     return false;
-  }
-
+  };
+  
+  // Completely rearrange our board to match the given encoded board number
+  this.decode = function(encodedValue) {
+    var digitBase = puzzleLength-1;
+    var decodeCurrent = 0;
+    var decodeRemainder = encodedValue;
+    var i = 0;
+    var tileNum = 0;
+  
+    for (i = 0; i < puzzleLength; i++) {
+      scratchpad[i] = false;
+    }
+    
+    for (i = 0; i < puzzleLength; i++) {
+      tileNum = 0;
+      decodeCurrent = Math.floor(decodeRemainder/F[digitBase]);
+      decodeRemainder = decodeRemainder % F[digitBase];
+      digitBase--;
+      
+      while (decodeCurrent > 0 || scratchpad[tileNum]) {
+        if (!scratchpad[tileNum]) {
+          decodeCurrent--;
+        }
+        tileNum++;
+      }
+      
+      puzzleState[i] = tileNum;
+      scratchpad[tileNum] = true;
+      if (tileNum==0) {
+        indexBlank = i;
+      }
+    }
+    
+    invalidateAuxStats();
+  };
+  
   /////////////////////////////////////////////////////////////////////////////
   // Puzzle state representation methods
 
   // Encode the puzzle state into a single number
   this.encode = function() {
-    var tileEncoded = new Array(puzzleLength);
     var digitBase = puzzleLength-1;
     var encodeValue = 0;
     
-    ensureFactorialTable();
-    
     for (var i = 0; i < puzzleLength; i++) {
-      tileEncoded[i] = false;
+      scratchpad[i] = false;
     }
     
     for (var i = 0; i < puzzleLength; i++) {
@@ -270,14 +260,14 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
       var encodeNum = tileNum;
       
       for (var j = 0; j < tileNum; j++) {
-        if (tileEncoded[j]) {
+        if (scratchpad[j]) {
           encodeNum--;
         }
       }
       
       encodeValue += encodeNum * F[digitBase--];
       
-      tileEncoded[tileNum] = true;
+      scratchpad[tileNum] = true;
     }
     
     /*
@@ -312,6 +302,9 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
   // Public property getters
   /////////////////////////////////////////////////////////////////////////////
   
+  // Returns true if the puzzle is in the solved state
+  this.isSolved = function() { ensureAuxStats(); return manhattanDistance==0; };
+  
   // Returns the number of columns on the game board
   this.getColumns = function() { return puzzleColumns; };
   
@@ -322,18 +315,10 @@ function SlidingTilePuzzle(columns, rows, encodedPuzzleState) {
   this.getSize = function() { return puzzleLength; };
   
   // Returns the number of tiles displaced from their goal position
-  this.getDisplacedTiles = function() {
-    ensureAuxStats();
-    
-    return displacedTiles;
-  };
-  
+  this.getDisplacedTiles = function() { ensureAuxStats(); return displacedTiles; };
+
   // Returns the sum of the distances of all displaced tiles from their goals
-  this.getManhattanDistance = function() {
-    ensureAuxStats();
-    
-    return manhattanDistance;
-  };
+  this.getManhattanDistance = function() { ensureAuxStats(); return manhattanDistance; };
 }
 
 // Gets the length of a tile's side.
@@ -422,6 +407,124 @@ var setupTiles = function() {
   resizeTiles();
 };
 
+// Given the encoded value of a game board representing the solved position,
+// generate a complete lookup table of the optimal number of steps to solve
+// every solvable state.
+function OptimalSolver8Puzzle(encodedSolution) {
+  // Iterator
+  var i = 0;
+  
+  // Set up the factorial lookup table
+  var F = [1];
+  for (i = 1; i < 9; i++) { F[i] = F[i-1]*i; }
+  
+  // Intermediate information for problem space traversal
+  var workingBoard = new SlidingTilePuzzle(3,3);
+  var workerState = 1;
+  var workerList = new Array(0);
+  
+  // Initialize the table to hold results of the traversal
+  var optimalMovesTable = new Uint8Array(9 * F[8]);
+  for(i = 0; i < optimalMovesTable.length; i++) {
+    optimalMovesTable[i] = 255;
+  }
+  optimalMovesTable[encodedSolution] = 0;
+
+  // Given a board layout, see if it's one we've already visited.
+  // If not, add the steps it took to get there and add it to the open list so
+  // we remember to go and look at all its neighbors later.
+  var checkAddBoard = function(steps, encodedBoard, openList) {
+    if (optimalMovesTable[encodedBoard] > steps) {
+      optimalMovesTable[encodedBoard] = steps;
+      openList.push(encodedBoard);
+    }
+  };
+
+  // Given a board layout, try moving all four adjacent tiles to see if we've
+  // visited those states. Every (1) valid and (2) new state is added to the
+  // open list so we can repeat the process for all their neighbors.
+  var addToOpenList = function(steps, encodedBoard, openList) {
+    workingBoard.decode(encodedBoard);
+
+    if (workingBoard.blankUp()) {
+      checkAddBoard(steps, workingBoard.encode(), openList);
+      workingBoard.blankDown();
+    }
+    
+    if (workingBoard.blankDown()) {
+      checkAddBoard(steps, workingBoard.encode(), openList);
+      workingBoard.blankUp();
+    }
+    
+    if (workingBoard.blankRight()) {
+      checkAddBoard(steps, workingBoard.encode(), openList);
+      workingBoard.blankLeft();
+    }
+    
+    if (workingBoard.blankLeft()) {
+      checkAddBoard(steps, workingBoard.encode(), openList);
+      workingBoard.blankRight();
+    }
+  };
+
+  // Kick off the search process by starting with the solved state.
+  addToOpenList(workerState, encodedSolution, workerList);
+
+  // Examine every board layout in the open list and check its neighbors.
+  // Once we exhaust one open list, we yield execution with setTimeout()
+  // to let other threads do their thing before we resume with the new
+  // open list.
+  // If the new open list is empty, walk through the array and mark every
+  // unvisited node as an unsolvable configuration.
+  var optimalMovesTableWorker = function() {
+    var openList = new Array(0);
+    
+    if (workerList.length > 0) {
+      for ( var i = 0; i < workerList.length; i++) {
+        addToOpenList(workerState+1, workerList[i], openList);  
+      }
+      
+      console.log("Processed " + workerList.length + " positions of length " + workerState);
+      
+      workerList = openList;
+      workerState++;
+      setTimeout(optimalMovesTableWorker, 5);
+    } else {
+      var unreached = 0;
+      for(i = 0; i < optimalMovesTable.length; i++) {
+        if (optimalMovesTable[i] == 255) {
+          optimalMovesTable[i] = 254;
+          unreached++;
+        }
+      }
+      console.log("Never reached "+unreached+" states.");
+    }
+  };
+  
+  // Kick off the search
+  console.log("Started OptimalSolver8Puzzle");
+  optimalMovesTableWorker();
+  
+  //////////////////////////////////////////////////////////////////////////////
+  // Public method to retrieve the optimal number of steps between the given
+  // encoded state and the solved state.
+  // * Returns string "[Calculating...]" if the search is still underway.
+  // * Returns string "[Unsolvable]" if the given state has no solution.
+  // * Returns number of steps if neither of the above.
+  
+  this.getSteps = function(encodedBoard) {
+    var lookup = optimalMovesTable[encodedBoard];
+    
+    if (lookup == 255) {
+      return "[Calculating...]";
+    } else if (lookup == 254) {
+      return "[Unsolvable]";
+    } else {
+      return lookup;
+    }
+  };
+}
+
 // Lookup table of factorial values
 var F = [1];
 
@@ -437,46 +540,6 @@ var ensureFactorialTable = function() {
       F[i] = F[i-1]*i;
     }
   }
-};
-
-// Encode the board position into a single number
-var encodeBoard = function(boardPositions) {
-  var tableSize = boardColumns * boardRows;
-  var tileEncoded = new Array(tableSize);
-  var digitBase = tableSize-1;
-  var encodeValue = 0;
-  
-  ensureFactorialTable();
-  
-  for (var i = 0; i < tableSize; i++) {
-    tileEncoded[i] = false;
-  }
-  
-  for (var i = 0; i < tableSize; i++) {
-    var tileNum = boardPositions[i];
-    var encodeNum = tileNum;
-    
-    for (var j = 0; j < tileNum; j++) {
-      if (tileEncoded[j]) {
-        encodeNum--;
-      }
-    }
-    
-    encodeValue += encodeNum * F[digitBase--];
-    
-    tileEncoded[tileNum] = true;
-  }
-  
-  /*
-  var decodeVerify = decodeBoard(encodeValue);
-  for (var i = 0; i < boardPositions.length; i++) {
-    if (decodeVerify[i] != boardPositions[i]) {
-      console.log("Expected: " + boardPositions + " but got:" + decodeVerify);
-    }
-  }
-  */
-  
-  return encodeValue;
 };
 
 // Decode the board number into a board layout
@@ -519,112 +582,6 @@ var decodeBoard = function(encodedValue) {
   return posDecoded;
 };
 
-// For 8-puzzle we can get away with brute force table of 362k bytes.
-var optimalMovesReady = false;
-var optimalMovesInProgress = false;
-var optimalMovesTable;
-
-var workerState;
-var workerList;
-
-var checkAddBoard = function(steps, boardPosition, indexBlank, indexSwap, openList) {
-  var checkEncode = 0;
-  
-  // Perform the swap
-  boardPosition[indexBlank] = boardPosition[indexSwap];
-  boardPosition[indexSwap] = tileBlank;
-
-  // Encode the position and check status in the table    
-  checkEncode = encodeBoard(boardPosition);
-  
-  if (optimalMovesTable[checkEncode] > steps) {
-    optimalMovesTable[checkEncode] = steps;
-    openList.push(checkEncode);
-  }
-  
-  // Swap back
-  boardPosition[indexSwap] = boardPosition[indexBlank];
-  boardPosition[indexBlank] = tileBlank;
-};
-
-var addToOpenList = function(steps, boardPosition, openList) {
-  var workingBoard = Array.from(boardPosition);
-  var indexBlank = indexOfTile(tileBlank, workingBoard);
-  
-  // Is "move tile down into blank" a valid move? If so check if it should be added to open list.
-  if (indexBlank >= boardColumns) {
-    checkAddBoard(steps, workingBoard, indexBlank, indexBlank-boardColumns, openList);
-  }
-  
-  // Check "move tile up into blank"
-  if (indexBlank+boardColumns < boardPosition.length) {
-    checkAddBoard(steps, workingBoard, indexBlank, indexBlank+boardColumns, openList);
-  }
-  
-  // Check "move tile right into blank"
-  if (indexBlank % boardColumns > 0) {
-    checkAddBoard(steps, workingBoard, indexBlank, indexBlank-1, openList);
-  }
-  
-  // Check "move tile left into blank"
-  if ((indexBlank+1) % boardColumns != 0) {
-    checkAddBoard(steps, workingBoard, indexBlank, indexBlank+1, openList);
-  }
-};
-
-var optimalMovesTableWorker = function() {
-  var openList = new Array(0);
-  
-  if (workerState == 0) {
-    var solvedBoard = [1,2,3,4,5,6,7,8,0];
-
-    optimalMovesTable[encodeBoard(solvedBoard)] = 0;
-    
-    addToOpenList(1, solvedBoard, openList);
-
-    console.log("Started optimal moves search table");
-
-    workerList = openList;
-    workerState++;
-    
-    setTimeout(optimalMovesTableWorker, 5);
-  } else if (workerList.length > 0) {
-
-    for ( var i = 0; i < workerList.length; i++) {
-      var nowBoard = decodeBoard(workerList[i]);
-      addToOpenList(workerState+1, nowBoard, openList);  
-    }
-    
-    // console.log("Processed " + workerList.length + " positions of length " + workerState);
-    
-    workerList = openList;
-    workerState++;
-    setTimeout(optimalMovesTableWorker, 5);
-  } else {
-    optimalMovesReady = true;
-  }
-};
-
-var getOptimalMoves = function(gameBoard) {
-    if (!optimalMovesReady) {
-      if (!optimalMovesInProgress) {
-        var boardSize = gameBoard.length;
-        ensureFactorialTable();
-        optimalMovesTable = new Uint8Array(boardSize * F[boardSize-1]);
-        for( var i = 0; i < optimalMovesTable.length; i++) {
-          optimalMovesTable[i] = 255;
-        }
-
-        workerState = 0;
-        setTimeout(optimalMovesTableWorker, 5);
-        
-        optimalMovesInProgress = true;
-      } 
-      return "[Calculating...]";
-    } else {
-      return optimalMovesTable[encodeBoard(gameBoard)];
-    }
-};
 
 // Evaluates the board position and update the status text
 var updateStatusBar = function(puzzle) {
@@ -638,7 +595,7 @@ var updateStatusBar = function(puzzle) {
   } else {
     $("#boardState").text("Displaced=" + puzzle.getDisplacedTiles() + 
       " Distance=" + puzzle.getManhattanDistance() + 
-      " Optimal=" + getOptimalMoves(tilePosition));
+      " Optimal=" + solution8puzzle.getSteps(puzzle.encode()));
     $("#progress").text(playerMoves + " moves so far.");
   }
 };
@@ -655,7 +612,6 @@ var tileClicked = function(event) {
     updatePositionOfTile(tileClick);
     playerMoves++;
     updateStatusBar(puzzle);
-    console.log(puzzle.printState());
   }
 };
 
@@ -717,7 +673,8 @@ $(document).ready(function() {
   $(window).resize(resizeTiles);
   $("#tileBoard").on("click", ".box", newPuzzle, tileClicked);
   $("#scrambleButton").on("click", newPuzzle, scramblePuzzle);
-  getOptimalMoves(tilePosition);
-  
-  console.log(newPuzzle.printState());
+
+  if (solution8puzzle===undefined) {
+    solution8puzzle = new OptimalSolver8Puzzle(newPuzzle.encode());
+  }
 });
