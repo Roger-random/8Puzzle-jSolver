@@ -301,7 +301,7 @@ function SlidingTilePuzzle(columns, rows) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// Views - the V of MVC
+// View - the V of MVC
 
 // Simple HTML viewer, theoretically easily switched to something more
 // sophisticated.
@@ -310,8 +310,7 @@ function jQuerySimpleView(puzzle) {
   // Values based on the puzzle
   var viewColumns = puzzle.getColumns();
   var viewRows = puzzle.getRows();
-  var lastSeenBoard = puzzle.asArray();
-  
+
   // Other values as constants
   
   // How much space to put between tiles, in fraction of maximum tile space. 
@@ -354,7 +353,7 @@ function jQuerySimpleView(puzzle) {
   // corresponding location on screen. Call this after the tile has been
   // moved in the tilePosition[] array.
   this.updatePositionOfTile = function(tileNum, gameBoard) {
-    var tileIndex = indexOfTile(tileNum, (gameBoard===undefined) ? lastSeenBoard : gameBoard);
+    var tileIndex = indexOfTile(tileNum, gameBoard);
   
     var tileRow = Math.floor(tileIndex / viewColumns);
     var tileColumn = tileIndex % viewColumns;
@@ -365,12 +364,10 @@ function jQuerySimpleView(puzzle) {
       "left": tileColumn * tileDim,
       "top": tileRow * tileDim
     }, tileSlideTime);
-    
-    lastSeenBoard = (gameBoard===undefined) ? lastSeenBoard : gameBoard;
   };
 
   // When the viewport is resized, update size of board accordingly.
-  this.resizeTiles = function() {
+  this.resizeTiles = function(event) {
     var boxes = $(".box");
     var boxLabels = $(".boxLabel");
     var tileDim = getTileDim();
@@ -386,8 +383,10 @@ function jQuerySimpleView(puzzle) {
       "padding": tileDim / 4 + "px"
     });
   
+    var view = event.data["view"];
+    var puzzleAsArray = event.data["model"].asArray();
     for (var i = 1; i < (viewColumns*viewRows); i++) {
-      this.updatePositionOfTile(i);
+      view.updatePositionOfTile(i, puzzleAsArray);
     }
   
     $("#tileBoard").css("height", (tileDim * (1/(1-tileSpace))) * viewRows);
@@ -396,7 +395,7 @@ function jQuerySimpleView(puzzle) {
   // Initial setup of game board. Take the HTML for ".box" under the
   // tileTemplateHost" and clone it 8 times for the game tile. 
   // For each tile, the tile text is updated and the ID set to the tile number.
-  this.setupTiles = function() {
+  this.setupTiles = function(eventDataPackage) {
     var tileBoard = $("#tileBoard");
     var tileTemplate = $("#tileTemplateHost .box");
   
@@ -407,7 +406,7 @@ function jQuerySimpleView(puzzle) {
       tileBoard.append(newTile);
     }
   
-    this.resizeTiles();
+    this.resizeTiles({"data":eventDataPackage});
   };
 
   // Evaluates the board position and update the status text
@@ -553,8 +552,12 @@ function OptimalSolver8Puzzle(encodedSolution) {
   };
 }
 
+/////////////////////////////////////////////////////////////////////////////
+// A simple controller class to respond to click events to manipulate the
+// puzzle.
+
 function jQuerySimpleController() {
-  var playerMoves;
+  var playerMoves = 0;
   
   // Scrambles the puzzle until the manhattan distance of the configuration is at
   // least twice that of the board size. (Every tile is at least 2 spaces out of
@@ -629,6 +632,7 @@ function jQuerySimpleController() {
     }
   };
   
+  // Returns the number of times the human player has moved a tile
   this.getPlayerMoves = function() {
     return playerMoves;
   };
@@ -648,8 +652,8 @@ $(document).ready(function() {
     "controller" : clickController,
     "solver" : solver};
 
-  htmlView.setupTiles();
-  $(window).resize(htmlView.resizeTiles);
+  htmlView.setupTiles(eventDataPackage);
+  $(window).resize(eventDataPackage, htmlView.resizeTiles);
   $("#tileBoard").on("click", ".box", eventDataPackage, clickController.tileClicked);
   $("#scrambleButton").on("click", eventDataPackage, clickController.scramblePuzzle);
 });
