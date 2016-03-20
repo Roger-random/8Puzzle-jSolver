@@ -1,29 +1,3 @@
-//  Blank space is represented as tile number 0
-var tileBlank = 0;
-
-// Array tracks the position of tiles.
-// Index in array = position on the board.
-// Value in the array = number on the tile.
-var tilePosition = [1, 2, 3,
-                    4, 5, 6, 
-                    7, 8, tileBlank];
-
-var boardRows = 3;
-var boardColumns = 3;
-
-// How long to take to animate a tile
-var tileSlideTime = 25;
-
-// How much space to put between tiles, in fraction of maximum tile space. 
-// (0.05 = 5% space)
-var tileSpace = 0.05;
-
-// Track the number of times the player moved a tile
-var playerMoves = 0;
-
-// One of two controllers utilizing the puzzle model.
-var solution8puzzle;
-
 /////////////////////////////////////////////////////////////////////////////
 // The M of MVC: Model
 
@@ -281,7 +255,7 @@ function SlidingTilePuzzle(columns, rows) {
     
     return encodeValue;
   };
-
+  
   // Returns a string that represents the state of this puzzle
   this.printState = function() {
     var stringBuilder = "DT="+displacedTiles+" MD="+manhattanDistance+" B@"+indexBlank;
@@ -296,6 +270,11 @@ function SlidingTilePuzzle(columns, rows) {
     stringBuilder += "\n";
     
     return stringBuilder;
+  };
+  
+  // Returns an array that represents the state of this puzzle
+  this.asArray = function() {
+    return Array.from(puzzleState);
   };
 
   /////////////////////////////////////////////////////////////////////////////
@@ -321,92 +300,141 @@ function SlidingTilePuzzle(columns, rows) {
   this.getManhattanDistance = function() { ensureAuxStats(); return manhattanDistance; };
 }
 
-// Gets the length of a tile's side.
-// The item #tileBoard is told to lay itself out at 100% of available width.
-// We also query for the visible window's inner width and height.
-// The minimum of all of those is the maximum possible dimension to be entirely visible.
-// We divided that by number of rows/columns.
-// Further subtract by however much space we want to put between tiles.
-var getTileDim = function() {
-  var tileBoard = $("#tileBoard");
+/////////////////////////////////////////////////////////////////////////////
+// Views - the V of MVC
 
-  var minDim = Math.min(
-    window.innerWidth, 
-    window.innerHeight-$("#otherUI").outerHeight(), 
-    tileBoard.innerWidth() );
+// Simple HTML viewer, theoretically easily switched to something more
+// sophisticated.
 
-  return (minDim / Math.max(boardRows, boardColumns)) * (1-tileSpace);
-};
+function jQuerySimpleView(puzzle) {
+  // Values based on the puzzle
+  var viewColumns = puzzle.getColumns();
+  var viewRows = puzzle.getRows();
+  var lastSeenBoard = puzzle.asArray();
+  
+  // Other values as constants
+  
+  // How much space to put between tiles, in fraction of maximum tile space. 
+  // (0.05 = 5% space)
+  var tileSpace = 0.05;
 
-// Given a tile number, return its index in the array.
-// Returns -1 if not found.
-var indexOfTile = function(tileNum, gameBoard) {
-  for (var i = 0; i < gameBoard.length; i++) {
-    if (gameBoard[i] == tileNum) {
-      return i;
+  // How long to take to animate a tile
+  var tileSlideTime = 25;
+  
+  // Gets the length of a tile's side.
+  // The item #tileBoard is told to lay itself out at 100% of available width.
+  // We also query for the visible window's inner width and height.
+  // The minimum of all of those is the maximum possible dimension to be entirely visible.
+  // We divided that by number of rows/columns.
+  // Further subtract by however much space we want to put between tiles.
+  var getTileDim = function() {
+    var tileBoard = $("#tileBoard");
+  
+    var minDim = Math.min(
+      window.innerWidth, 
+      window.innerHeight-$("#otherUI").outerHeight(), 
+      tileBoard.innerWidth() );
+  
+    return (minDim / Math.max(viewRows, viewColumns)) * (1-tileSpace);
+  };
+
+  // Given a tile number, return its index in the array.
+  // Returns -1 if not found.
+  var indexOfTile = function(tileNum, gameBoard) {
+    for (var i = 0; i < gameBoard.length; i++) {
+      if (gameBoard[i] == tileNum) {
+        return i;
+      }
     }
-  }
+  
+    return -1;
+  };
 
-  return -1;
-};
+  // Given a tile number, starts an animation that moves the tile to its
+  // corresponding location on screen. Call this after the tile has been
+  // moved in the tilePosition[] array.
+  this.updatePositionOfTile = function(tileNum, gameBoard) {
+    var tileIndex = indexOfTile(tileNum, (gameBoard===undefined) ? lastSeenBoard : gameBoard);
+  
+    var tileRow = Math.floor(tileIndex / viewColumns);
+    var tileColumn = tileIndex % viewColumns;
+    var tileDim = getTileDim() * (1/(1-tileSpace));
+    
+  
+    $("#" + tileNum).animate({
+      "left": tileColumn * tileDim,
+      "top": tileRow * tileDim
+    }, tileSlideTime);
+    
+    lastSeenBoard = (gameBoard===undefined) ? lastSeenBoard : gameBoard;
+  };
 
-// Given a tile number, starts an animation that moves the tile to its
-// corresponding location on screen. Call this after the tile has been
-// moved in the tilePosition[] array.
-var updatePositionOfTile = function(tileNum) {
-  var tileIndex = indexOfTile(tileNum, tilePosition);
+  // When the viewport is resized, update size of board accordingly.
+  this.resizeTiles = function() {
+    var boxes = $(".box");
+    var boxLabels = $(".boxLabel");
+    var tileDim = getTileDim();
+  
+    boxes.css({
+      "width": tileDim,
+      "height": tileDim,
+      "border-radius": (tileDim * 0.15)
+    });
+  
+    boxLabels.css({
+      "font-size": tileDim / 2 + "px",
+      "padding": tileDim / 4 + "px"
+    });
+  
+    for (var i = 1; i < (viewColumns*viewRows); i++) {
+      this.updatePositionOfTile(i);
+    }
+  
+    $("#tileBoard").css("height", (tileDim * (1/(1-tileSpace))) * viewRows);
+  };
 
-  var tileRow = Math.floor(tileIndex / boardColumns);
-  var tileColumn = tileIndex % boardColumns;
-  var tileDim = getTileDim() * (1/(1-tileSpace));
+  // Initial setup of game board. Take the HTML for ".box" under the
+  // tileTemplateHost" and clone it 8 times for the game tile. 
+  // For each tile, the tile text is updated and the ID set to the tile number.
+  this.setupTiles = function() {
+    var tileBoard = $("#tileBoard");
+    var tileTemplate = $("#tileTemplateHost .box");
+  
+    for (var i = 1; i < (viewRows * viewColumns); i++) {
+      var newTile = tileTemplate.clone(false, false);
+      newTile.attr("id", i);
+      newTile.children(".boxLabel").text(i);
+      tileBoard.append(newTile);
+    }
+  
+    this.resizeTiles();
+  };
 
-  $("#" + tileNum).animate({
-    "left": tileColumn * tileDim,
-    "top": tileRow * tileDim
-  }, tileSlideTime);
-};
+  // Evaluates the board position and update the status text
+  this.updateStatusBar = function(eventDataPackage) {
+    var puzzle = eventDataPackage["model"];
+    var controller = eventDataPackage["controller"];
+    var solver = eventDataPackage["solver"];
+    
+    if (puzzle.isSolved()) {
+      $("#boardState").text("All tiles in correct position");
+      $("#progress").text(controller.getPlayerMoves() + " moves were taken. Press SCRAMBLE PUZZLE to start again.");
+      $("#scrambleButton").css("background-color", "red");
+      $("#scrambleText").text("SCRAMBLE PUZZLE");
+      $("#scrambleButton").on("click", eventDataPackage, controller.scramblePuzzle);
+    } else {
+      $("#boardState").text("Displaced=" + puzzle.getDisplacedTiles() + 
+        " Distance=" + puzzle.getManhattanDistance() + 
+        " Optimal=" + solver.getSteps(puzzle.encode()));
+      $("#progress").text(controller.getPlayerMoves() + " moves so far.");
+    }
+  };
+}
 
-// When the viewport is resized, update size of board accordingly.
-var resizeTiles = function() {
-  var boxes = $(".box");
-  var boxLabels = $(".boxLabel");
-  var tileDim = getTileDim();
+/////////////////////////////////////////////////////////////////////////////
+// Controllers - the C of MVC
 
-  boxes.css({
-    "width": tileDim,
-    "height": tileDim,
-    "border-radius": (tileDim * 0.15)
-  });
-
-  boxLabels.css({
-    "font-size": tileDim / 2 + "px",
-    "padding": tileDim / 4 + "px"
-  });
-
-  for (var i = 1; i < tilePosition.length; i++) {
-    updatePositionOfTile(i);
-  }
-
-  $("#tileBoard").css("height", (tileDim * (1/(1-tileSpace))) * boardRows);
-};
-
-// Initial setup of game board. Take the HTML for ".box" under the
-// tileTemplateHost" and clone it 8 times for the game tile. 
-// For each tile, the tile text is updated and the ID set to the tile number.
-var setupTiles = function() {
-  var tileBoard = $("#tileBoard");
-  var tileTemplate = $("#tileTemplateHost .box");
-
-  for (var i = 1; i < (boardRows * boardColumns); i++) {
-    var newTile = tileTemplate.clone(false, false);
-    newTile.attr("id", i);
-    newTile.children(".boxLabel").text(i);
-    tileBoard.append(newTile);
-  }
-
-  resizeTiles();
-};
-
+/////////////////////////////////////////////////////////////////////////////
 // Given the encoded value of a game board representing the solved position,
 // generate a complete lookup table of the optimal number of steps to solve
 // every solvable state.
@@ -525,156 +553,103 @@ function OptimalSolver8Puzzle(encodedSolution) {
   };
 }
 
-// Lookup table of factorial values
-var F = [1];
-
-// Ensure the factorial values lookup table is ready
-var ensureFactorialTable = function() {
-  var tableSize = boardColumns * boardRows;
+function jQuerySimpleController() {
+  var playerMoves;
   
-  if (F.length == tableSize) {
-    return;
-  } else {
-    F[0] = 1;
-    for (var i = 1; i < tableSize; i++) {
-      F[i] = F[i-1]*i;
-    }
-  }
-};
-
-// Decode the board number into a board layout
-var decodeBoard = function(encodedValue) {
-  var tableSize = boardColumns * boardRows;
-  var tileDecoded = new Array(tableSize);
-  var digitBase = tableSize-1;
-  var posDecoded = new Array(tableSize);
-  var decodeCurrent = 0;
-  var decodeRemainder = encodedValue;
-
-  ensureFactorialTable();
-  
-  for (var i = 0; i < tableSize; i++) {
-    tileDecoded[i] = false;
-  }
-  
-  for (var i = 0; i < tableSize; i++) {
-    var tileNum = 0;
-    decodeCurrent = Math.floor(decodeRemainder/F[digitBase]);
-    decodeRemainder = decodeRemainder % F[digitBase];
-    digitBase--;
+  // Scrambles the puzzle until the manhattan distance of the configuration is at
+  // least twice that of the board size. (Every tile is at least 2 spaces out of
+  // place.)
+  this.scramblePuzzle = function(event) {
+    var scrambleSteps = 0;
+    var success = false;
     
-    while (decodeCurrent > 0 || tileDecoded[tileNum]) {
-      if (!tileDecoded[tileNum]) {
-        decodeCurrent--;
+    var puzzle = event.data["model"];
+    var view = event.data["view"];
+    
+    if (puzzle===undefined) {
+      console.log("scramblePuzzle failed to retrieve puzzle model from event data.");
+    }
+  
+    while(puzzle.getManhattanDistance() < puzzle.getSize() * 2) {
+      success = false;
+      
+      switch (Math.floor(Math.random()*4)) {
+        case 0: // Try to move a tile down into the blank
+          success = puzzle.blankUp();
+          break;
+        case 1: // Try to move a tile up into the blank
+          success = puzzle.blankDown();
+          break;
+        case 2: // Try to move a tile left into the blank
+          success = puzzle.blankRight();
+          break;
+        case 3: // Try to move a tile right into the blank
+          success = puzzle.blankLeft();
+          break;
+        default:
+          alert("Random number generation in scramblePuzzle did not behave as expected");
+          break;
       }
-      tileNum++;
-    }
-    
-    posDecoded[i] = tileNum;
-    tileDecoded[tileNum] = true;
-  }
-  /*
-  if (encodedValue != encodeBoard(tileDecoded)) {
-    console.log("Inconsistency between encode and decode.");
-  }
-  */
   
-  return posDecoded;
-};
-
-
-// Evaluates the board position and update the status text
-var updateStatusBar = function(puzzle) {
-
-  if (puzzle.getDisplacedTiles() == 0) {
-    $("#boardState").text("All tiles in correct position");
-    $("#progress").text(playerMoves + " moves were taken. Press SCRAMBLE PUZZLE to start again.");
-    $("#scrambleButton").css("background-color", "red");
-    $("#scrambleText").text("SCRAMBLE PUZZLE");
-    $("#scrambleButton").on("click", puzzle, scramblePuzzle);
-  } else {
-    $("#boardState").text("Displaced=" + puzzle.getDisplacedTiles() + 
-      " Distance=" + puzzle.getManhattanDistance() + 
-      " Optimal=" + solution8puzzle.getSteps(puzzle.encode()));
-    $("#progress").text(playerMoves + " moves so far.");
-  }
-};
-
-// Click event handler for .box delegated on the #tileBoard. $(this) is the 
-// tile that got clicked on. Retrieve its index in the tilePosition array and
-// the index of the blank to determine if they are adjacent. If so, it is a 
-// valid move, and perform the swap.
-var tileClicked = function(event) {
-  var tileClick = $(this).attr("id");
-  var puzzle = event.data;
-  if (puzzle.moveTile(tileClick)) {
-    tilePosition = decodeBoard(puzzle.encode());
-    updatePositionOfTile(tileClick);
-    playerMoves++;
-    updateStatusBar(puzzle);
-  }
-};
-
-// Scrambles the puzzle until the manhattan distance of the configuration is at
-// least twice that of the board size. (Every tile is at least 2 spaces out of
-// place.)
-var scramblePuzzle = function(event) {
-  var scrambleSteps = 0;
-  var success = false;
+      if (success) {
+        scrambleSteps++;
+      }
+    }
   
-  var puzzle = event.data;
-
-  while(puzzle.getManhattanDistance() < puzzle.getSize() * 2) {
-    success = false;
-    
-    switch (Math.floor(Math.random()*4)) {
-      case 0: // Try to move a tile down into the blank
-        success = puzzle.blankUp();
-        break;
-      case 1: // Try to move a tile up into the blank
-        success = puzzle.blankDown();
-        break;
-      case 2: // Try to move a tile left into the blank
-        success = puzzle.blankRight();
-        break;
-      case 3: // Try to move a tile right into the blank
-        success = puzzle.blankLeft();
-        break;
-      default:
-        alert("Random number generation in scramblePuzzle did not behave as expected");
-        break;
+    for( var i = 0; i < puzzle.getSize(); i++) {
+      view.updatePositionOfTile(i, puzzle.asArray());
     }
-
-    if (success) {
-      scrambleSteps++;
-    }
-  }
-
-  tilePosition = decodeBoard(puzzle.encode());
-  for( var i = 0; i < tilePosition.length; i++) {
-    updatePositionOfTile(i);
-  }
+      
+    console.log("Scramble took " + scrambleSteps + " steps to meet criteria.");
+  
+    playerMoves = 0;
+    view.updateStatusBar(event.data);
+    $("#scrambleButton").css("background-color", "gray");
+    $("#scrambleText").text("PUZZLE IN PROGRESS");
+    $("#scrambleButton").off("click", this.scramblePuzzle);
+  };
+  
+  // Click event handler for .box delegated on the #tileBoard. $(this) is the 
+  // tile that got clicked on. Retrieve its index in the tilePosition array and
+  // the index of the blank to determine if they are adjacent. If so, it is a 
+  // valid move, and perform the swap.
+  this.tileClicked = function(event) {
+    var tileClick = $(this).attr("id");
+    var puzzle = event.data["model"];
+    var view = event.data["view"];
     
-  console.log("Scramble took " + scrambleSteps + " steps to meet criteria.");
-
-  playerMoves = 0;
-  updateStatusBar(puzzle);
-  $("#scrambleButton").css("background-color", "gray");
-  $("#scrambleText").text("PUZZLE IN PROGRESS");
-  $("#scrambleButton").off("click", scramblePuzzle);
-};
+    if (puzzle===undefined) {
+      console.log("tileClicked failed to retrieve puzzle model from event data.");
+    }
+    
+    if (puzzle.moveTile(tileClick)) {
+      view.updatePositionOfTile(tileClick,puzzle.asArray());
+      playerMoves++;
+      view.updateStatusBar(event.data);
+    }
+  };
+  
+  this.getPlayerMoves = function() {
+    return playerMoves;
+  };
+}
 
 // Game board setup: generate tiles, size them correctly, and wait for the
 // user to click.
 $(document).ready(function() {
-  var newPuzzle = new SlidingTilePuzzle(3, 3);
+  var puzzleModel = new SlidingTilePuzzle(3, 3);
+  var htmlView = new jQuerySimpleView(puzzleModel);
+  var clickController = new jQuerySimpleController();
+  var solver = new OptimalSolver8Puzzle(puzzleModel.encode());
+  
+  var eventDataPackage = { 
+    "model" : puzzleModel, 
+    "view" : htmlView,
+    "controller" : clickController,
+    "solver" : solver};
 
-  setupTiles();
-  $(window).resize(resizeTiles);
-  $("#tileBoard").on("click", ".box", newPuzzle, tileClicked);
-  $("#scrambleButton").on("click", newPuzzle, scramblePuzzle);
-
-  if (solution8puzzle===undefined) {
-    solution8puzzle = new OptimalSolver8Puzzle(newPuzzle.encode());
-  }
+  htmlView.setupTiles();
+  $(window).resize(htmlView.resizeTiles);
+  $("#tileBoard").on("click", ".box", eventDataPackage, clickController.tileClicked);
+  $("#scrambleButton").on("click", eventDataPackage, clickController.scramblePuzzle);
 });
