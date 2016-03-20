@@ -281,6 +281,61 @@ function SlidingTilePuzzle(columns, rows) {
   // Public property getters
   /////////////////////////////////////////////////////////////////////////////
   
+  // Determines if this puzzle is solvable.
+  this.isSolvable = function() {
+    var inversionCountIsEven = (this.getInversionCount() % 2)==0;
+    
+    if (puzzleColumns%2 == 0) {
+      // Even number of columns - solvability will depend on position of the blank. 
+      var blankIsEvenRowsFromDesired = ((puzzleRows - Math.floor(indexBlank/puzzleColumns)) % 2) == 1;
+      
+      // The below can be condensed into either of the following
+      // (1) blankIsEvenRowsFromDesired XNOR inversionCountIsEven
+      // (2) blankIsEvenRowsFromDesired == inversionCountIsEven
+      // But I'm not doing it for the sake of code readability.
+      // Not sure if JavaScript engines are smart enough to pick this up.
+      if (blankIsEvenRowsFromDesired) {
+        // If it is on the correct (bottom) row, or an even number of rows
+        // from there, then the position is solvable if inversion is even.
+        return inversionCountIsEven;
+      } else {
+        // If it is odd number of rows away from the correct row, the position
+        // is solvable if the inversion is odd.
+        return !inversionCountIsEven;
+      }
+    } else {
+      // Odd number of columns - all even inversion configurations are solvable.
+      return inversionCountIsEven;
+    }
+  };
+  
+  // The inversion count for the whole puzzle is the sum of inversion count for
+  // all tiles. For each tile, the inversion count is the number of tiles that
+  // are out of order relative to it. 
+  // * A completely solved puzzle has inversion count of zero because the tiles 
+  //   are in increasing order.
+  // * Inversion count is at max when the tiles are arranged in decreasing order.
+  this.getInversionCount = function() {
+    var inversionCount = 0,
+        currentTile = 0,
+        compareTile = 0;
+    
+    for (var i = 0; i < puzzleLength; i++) {
+      currentTile = puzzleState[i];
+      
+      if (currentTile > 0) {
+        for (var j = i; j < puzzleLength; j++) {
+          compareTile = puzzleState[j];
+          if (compareTile != 0 && compareTile < currentTile) {
+            inversionCount++;
+          }
+        }
+      }
+    }
+    
+    return inversionCount;
+  };
+  
   // Returns true if the puzzle is in the solved state
   this.isSolved = function() { ensureAuxStats(); return manhattanDistance==0; };
   
@@ -424,7 +479,8 @@ function jQuerySimpleView(puzzle) {
     } else {
       $("#boardState").text("Displaced=" + puzzle.getDisplacedTiles() + 
         " Distance=" + puzzle.getManhattanDistance() + 
-        " Optimal=" + solver.getSteps(puzzle.encode()));
+        " Optimal=" + solver.getSteps(puzzle.encode()) +
+        " IC=" + puzzle.getInversionCount());
       $("#progress").text(controller.getPlayerMoves() + " moves so far.");
     }
   };
@@ -505,7 +561,7 @@ function OptimalSolver8Puzzle(encodedSolution) {
   // unvisited node as an unsolvable configuration.
   var optimalMovesTableWorker = function() {
     var openList = new Array(0);
-    
+
     if (workerList.length > 0) {
       for ( var i = 0; i < workerList.length; i++) {
         addToOpenList(workerState+1, workerList[i], openList);  
