@@ -413,10 +413,10 @@ function jQuerySimpleView(puzzle) {
     var tileRow = Math.floor(tileIndex / viewColumns);
     var tileColumn = tileIndex % viewColumns;
     var tileDim = getTileDim() * (1/(1-tileSpace));
-    
+    var tileLeft = Math.max(0, $("#tileBoard").innerWidth()-(viewColumns * tileDim)) / 2;
   
     $("#" + tileNum).animate({
-      "left": tileColumn * tileDim,
+      "left": tileColumn * tileDim + tileLeft,
       "top": tileRow * tileDim
     }, tileSlideTime);
   };
@@ -435,7 +435,8 @@ function jQuerySimpleView(puzzle) {
   
     boxLabels.css({
       "font-size": tileDim / 2 + "px",
-      "padding": tileDim / 4 + "px"
+      "padding": tileDim / 6 + "px",
+      "margin": 0
     });
   
     var view = event.data["view"];
