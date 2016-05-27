@@ -480,8 +480,7 @@ function jQuerySimpleView(puzzle) {
     } else {
       $("#boardState").text("Displaced=" + puzzle.getDisplacedTiles() + 
         " Distance=" + puzzle.getManhattanDistance() + 
-        " Optimal=" + solver.getSteps(puzzle.encode()) +
-        " IC=" + puzzle.getInversionCount());
+        " Optimal=" + solver.getSteps(puzzle.encode()));
       $("#progress").text(controller.getPlayerMoves() + " moves so far.");
     }
   };
